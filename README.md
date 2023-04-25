@@ -1,4 +1,4 @@
-# ascShape
+# ascshape
 Tool to reformat code into a shape specified by image.
 The image should contain only 2 colors with different brightness 
 (preferably black and white)
