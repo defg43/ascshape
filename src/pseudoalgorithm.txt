@@ -1,0 +1,55 @@
+// should be integrated in current C++ code
+void parse(string mask, string source_code, int position_mask, int position_source_code){
+    int left_source_code = characters_until(' ', source_code, position_source_code);
+    int left_mask = characters_until(' ', mask, position_mask);
+
+    bool source_token_fits_in_mask_token = left_mask >= left_source_code;
+
+    if (source_token_fits_in_mask_token)
+        // continue copying char by char
+    else
+        //invoke edgecase functoin
+}
+
+bool edgecase(int leftover_mask, string mask, int mask_position, string source_code, int *source_code_position) {
+
+    switch(leftover_mask) {
+        case 1:
+            insert space before last pasted token, eg. backtrack to last known space character or \n and insert another space after it, if that fails and no previous space character is found insert the space character at the beginning of the string, advance the index/current character pointer by one
+        case 2:
+            insert "/*" into the gap and call the finish_comment on the next character
+        case 3:
+            insert " /*" and call the finish_comment function on the next character
+        default:
+            insert "/*" at the start of the # sequence and call the finish_comment on the next character (presumably #)
+    }
+}
+
+bool prepend_character(char to_prepend, char token_seperator, string prependee, int *prependee_position) {
+    int position_local_copy = *prependee_position;
+    while(prependee[position_local_copy] != '\n' && prependee[position_local_copy] != ' ') {
+        // backtrack
+        if (position_local_copy > 0)
+            position_local_copy--;
+        else {
+            prependee.insert(position_local_copy, " ");
+            *prependee_position++;
+        }
+    }
+}
+
+bool finish_comment(string mask, int *position, int token_lenghts[]) {
+    attempt to finish the comment as soon as possible, to finish a comment we need at least to # of space.
+    if a *position has been found check how many # characters are left until the next space in the mask and save that number in a temporary variable, next check the lenght of the next token in the source code and consider if it will fit in the space to the next space character in the mask.
+    If not this would result in an imidiate second function call resulting in the creating of "*//*", thus we defer ending this function and skip to the next segment of #'s. if we reach the end of the mask in this way we return flase, otherwise we insert "*/", increment *position by the corresponding amount and return true
+}
+
+int characters_until(char to_search_for, string to_be_sarched, int position) {
+    int result = 0;
+    while(to_be_searched[position + result] != to_search_for ||
+            to_be_sarched[position + result] != '\0' ||
+                to_be_sarched[position + result] != '\n') {
+        result++;
+    }
+    return result;
+}
