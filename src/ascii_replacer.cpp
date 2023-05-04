@@ -89,15 +89,14 @@ int main(int argc, char* argv[]) {
     mask_str = buffer.str();
     int source_code_index;
 
-    for(auto maskchar : mask_str) {
+    for(int index = 0; auto &maskchar : mask_str) {
 
         // look ahead in mask and find number until next ' '
-        constexpr int mask_current_remaining_word_length =
-            mask_str.find(' ', maskchar.index());
+        int mask_current_remaining_word_length =
+            mask_str.find(' ', index);
         // compare to source_code_str and look if the next word fits in
-        constexpr int source_code_current_remaining_word_length =
+        int source_code_current_remaining_word_length =
                 source_str.find(' ', source_code_index);
-            count_char(source_str.substr(source_code_index), ' ');
             /* this can be expanded to include other opportunities to split 
             *  the source code tokens
             *  space characters are obviously earsed from the source code as
