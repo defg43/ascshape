@@ -13,8 +13,8 @@
 #define debug(...) 
 #endif
 typedef struct token {
-    std::string token;
-    int count;
+    std::string data;
+    int len;
     bool valid;
 }token;
 typedef struct globalvars {
@@ -27,9 +27,7 @@ typedef struct globalvars {
         int mask_slot_amount;
     std::string output;
         int output_ind;
-    std::string current_token;
-        int token_len;
-        int token_pos;
+    token current_token;
     int newline_distance;
     int slotend_distance;
     bool outofspace;
@@ -53,7 +51,7 @@ int count_char(const std::string& str, char c) {
 
 token pop_token(std::string& input) {
     token info;
-    info.count = 0;
+    info.len = 0;
     info.valid = false;    
     // Remove leading spaces
     while (!input.empty() && input[0] == ' ') {
@@ -66,20 +64,20 @@ token pop_token(std::string& input) {
     // Extract token
     size_t token_end = input.find(' ');
     if (token_end == std::string::npos) {
-        info.token = input;
+        info.data = input;
         input.clear();
     } else {
-        info.token = input.substr(0, token_end);
+        info.data = input.substr(0, token_end);
         input.erase(0, token_end);
     }
     // Remove trailing spaces
-    while (!info.token.empty() && info.token.back() == ' ') {
-        info.token.pop_back();
+    while (!info.data.empty() && info.data.back() == ' ') {
+        info.data.pop_back();
     }
     // Count characters in token
-    for (char c : info.token) {
+    for (char c : info.data) {
         if (c != ' ') {
-            info.count++;
+            info.len++;
         }
     }    
     // Set valid flag
@@ -170,18 +168,42 @@ bool replace(globalvars &vars) {
     vars.mask_ind = 0;
     vars.output_ind = 0;
     token current_token = {};
-    bool valid = false;
-    bool can_continue = false;
+    bool ok_to_continue = false;
+    bool token_fits = false;
+
+    vars.newline_distance = vars.mask.find('\n', vars.mask_ind);
+    vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
 
     do {
+        vars.current_token = pop_token(vars.src);
+
         vars.newline_distance = vars.mask.find('\n', vars.mask_ind);
         vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
-        current_token = pop_token(vars.src);
-        valid = current_token.valid;
 
-    } while(can_continue);
+        token_fits = vars.current_token.len <= vars.slotend_distance &&
+                     vars.current_token.len <= vars.newline_distance;
+        
+        vars.outofspace = vars.mask_ind == vars.mask_len;
+        ok_to_continue = token_fits && vars.current_token.valid &&
+                         !vars.outofspace;
+
+        if(token_fits) {
+            vars.output += vars.current_token.data;
+            vars.mask_ind += vars.current_token.len;
+        } else {
+            // token obviously doesnt fit
+            // handle edge case
+            // take along the entire context
+        }
+
+    } while(ok_to_continue);
     return false;
 } 
+
+bool parsingedgecase(globalvars &vars) {
+    return false;
+}
+
 #pragma endregion
 
 #pragma region main
