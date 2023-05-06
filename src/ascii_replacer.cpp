@@ -5,23 +5,45 @@
 #include <regex>
 #include <assert.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
 #if DEBUG == 1
 #define debug(...) printf(__VA_ARGS__)
 #else
 #define debug(...) 
 #endif
+typedef struct token {
+    std::string token;
+    int count;
+    bool valid;
+}token;
+typedef struct globalvars {
+    std::string src;
+        int src_ind;
+        int src_len;
+    std::string mask;
+        int mask_ind;
+        int mask_len;
+        int mask_slot_amount;
+    std::string output;
+        int output_ind;
+    std::string current_token;
+        int token_len;
+        int token_pos;
+    int newline_distance;
+    int slotend_distance;
+    bool outofspace;
+} globalvars;
+
+#pragma region util_functions
 
 void print_usage() {
     printf("Usage: ascii_art [mask_file] [source_file]\n"); 
     // cout is an eyesore and i refuse to use it 
 }
-
-int count_char(std::ifstream& file, char c) {
+int count_char(const std::string& str, char c) {
     int count = 0;
-    char current_char;
-    while (file.get(current_char)) {
+    for (char current_char : str) {
         if (current_char == c) {
             count++;
         }
@@ -29,15 +51,140 @@ int count_char(std::ifstream& file, char c) {
     return count;
 }
 
-bool insertcomment(string &output_str, string &mask_str, string &src_str, int &mask_ind, int &src_ind) {
-    //assert();
-    while (mask_ind < mask_str.lenght())
-    {
-    
+token pop_token(std::string& input) {
+    token info;
+    info.count = 0;
+    info.valid = false;    
+    // Remove leading spaces
+    while (!input.empty() && input[0] == ' ') {
+        input.erase(0, 1);
+    }    
+    // Check if input is empty
+    if (input.empty()) {
+        return info;
+    }    
+    // Extract token
+    size_t token_end = input.find(' ');
+    if (token_end == std::string::npos) {
+        info.token = input;
+        input.clear();
+    } else {
+        info.token = input.substr(0, token_end);
+        input.erase(0, token_end);
     }
-    
+    // Remove trailing spaces
+    while (!info.token.empty() && info.token.back() == ' ') {
+        info.token.pop_back();
+    }
+    // Count characters in token
+    for (char c : info.token) {
+        if (c != ' ') {
+            info.count++;
+        }
+    }    
+    // Set valid flag
+    info.valid = true;    
+    return info;
 }
 
+int getNextTokenLength(const std::string& str, int index) {
+    int start = -1, end = -1;
+    int len = str.length();
+    for (int i = index; i < len; i++) {
+        if (str[i] == ' ') {
+            if (start >= 0 && end < 0) {
+                end = i;
+            }
+        }
+        else {
+            if (start < 0) {
+                start = i;
+            }
+        }
+        if (i == len - 1 && start >= 0 && end < 0) {
+            end = len;
+        }
+        if (start >= 0 && end >= 0) {
+            return end - start;
+        }
+    }
+    return -1; // No more tokens found
+}
+
+int nextTokenStart(const std::string& str, int startIndex) {
+    // Skip any spaces before the next token
+    while (startIndex < str.length() && std::isspace(str[startIndex])) {
+        ++startIndex;
+    }
+    // Find the start of the next token
+    while (startIndex < str.length() && !std::isspace(str[startIndex])) {
+        ++startIndex;
+    }
+    // Skip any spaces after the current token
+    while (startIndex < str.length() && std::isspace(str[startIndex])) {
+        ++startIndex;
+    }
+    return startIndex == str.length() ? -1 : startIndex;
+}
+
+bool insertcomment(std::string &output_str, std::string &mask_str, std::string &src_str, 
+                    int &mask_ind, int &src_ind) {
+    assert(src_str.length() - 1 > src_ind);
+    // start comment, we can assume there is ineeded enough space
+    // insert comment start
+    output_str[mask_ind] = '/';
+    mask_ind++;
+    output_str[mask_ind] = '*';
+    mask_ind++;
+    while (mask_ind < mask_str.length()) {
+        if(mask_str[mask_ind] == ' ') // || mask_str[mask_ind] == '\n') // just skip
+            mask_ind++;
+        else { // we have reached a section where code can be placed, check if we can stop comment here
+            bool can_finish_comment = getNextTokenLength(mask_str, mask_ind - 1) >= getNextTokenLength(src_str, src_ind - 1) + 2;
+            if(can_finish_comment) {
+                output_str[mask_ind] = '*';
+                output_str[mask_ind + 1] = '/';
+                mask_ind++;
+                exit(EXIT_SUCCESS);
+                return true; 
+            } else { // we are trapped on an "island" and need to fill it with *
+                while (mask_ind < mask_str.length() && src_ind < src_str.length() && mask_str[mask_ind] != '\0' && mask_str[mask_ind] != ' ') // && mask_str[mask_ind] != '\n')
+                {
+                    mask_str[mask_ind] = '*';
+                    mask_ind++;
+                }
+                if(mask_ind >= mask_str.length() || src_ind >= src_str.length()) {
+                    exit(EXIT_FAILURE);
+                    return false;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+#pragma endregion
+
+#pragma region replacer
+bool replace(globalvars &vars) {
+    vars.mask_ind = 0;
+    vars.output_ind = 0;
+    token current_token = {};
+    bool valid = false;
+    bool can_continue = false;
+
+    do {
+        vars.newline_distance = vars.mask.find('\n', vars.mask_ind);
+        vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
+        current_token = pop_token(vars.src);
+        valid = current_token.valid;
+
+    } while(can_continue);
+    return false;
+} 
+#pragma endregion
+
+#pragma region main
 int main(int argc, char* argv[]) {
     if (argc != 3) {
         print_usage();
@@ -49,68 +196,40 @@ int main(int argc, char* argv[]) {
 
     if (!mask_file || !source_file) {
         std::cerr << "Error opening files\n";
-        std::cerr << (!mask_file) << " and the source is " << (!mask_file) << '\n';
+        std::cerr << (!mask_file) << " and the source is " << (!source_file) << '\n';
         return 1;
     }
 
-    int mask_width = 0;
-    int mask_height = 0;
-    std::string mask_line;
-    while (std::getline(mask_file, mask_line)) {
-        int line_length = mask_line.length();
-        if (line_length > mask_width) {
-            mask_width = line_length;
-        }
-        mask_height++;
-    }
-    mask_file.clear();
-    mask_file.seekg(0, std::ios::beg);
+    globalvars vars = {};
 
-    std::string source_str;
-    source_file.seekg(0, std::ios::end);
-    source_str.reserve(source_file.tellg());
-    source_file.seekg(0, std::ios::beg);
-    source_str.assign((std::istreambuf_iterator<char>(source_file)), std::istreambuf_iterator<char>());
-    source_file.clear();
-    source_file.seekg(0, std::ios::beg);
+    std::stringstream mask_buffer;
+    mask_buffer << mask_file.rdbuf();
+    vars.mask = mask_buffer.str();
 
-    // removing any whitespaces present in code
-    source_str.erase(remove(source_str.begin(), source_str.end(), '\t'), source_str.end());
-    source_str.erase(remove(source_str.begin(), source_str.end(), '\n'), source_str.end());
-    source_str.erase(remove(source_str.begin(), source_str.end(), '\r'), source_str.end());
+    std::stringstream src_buffer;
+    src_buffer << src_file.rdbuf();
+    vars.src = src_buffer.str();
 
-    // reduce n space characters to just one
-    source_str = regex_replace(source_str, std::regex("\\s{2,}"), " ");
+    // format the source code properly
+    vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\t'), vars.src.end());
+    vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\n'), vars.src.end());
+    vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\r'), vars.src.end());
+    vars.src = regex_replace(vars.src, std::regex("\\s{2,}"), " ");
 
-    int source_length = source_str.length();
-    int num_hash = count_char(mask_file, '#');
-    mask_file.clear();
-    mask_file.seekg(0, std::ios::beg);
-    if (num_hash < source_length) {
-        std::cerr << "Error: Source code too long for mask\n";
-        return 1;
+    // init vars
+    vars.mask_slot_amount = count_char(vars.mask, '#');
+    vars.mask_len = vars.mask.length();
+    vars.src_len = vars.src.length();
+    vars.outofspace = vars.src_len > vars.mask_slot_amount;
+
+    if (vars.outofspace) {
+        printf("not enough space\n");
+        exit(EXIT_FAILURE);
     }
 
-    int source_index = 0;
-    int mask_index = 0;
-
-    std::string result_line; // this should be a result string // to be removed
-
-    std::string shaped_output; // this is where the output goes
-    
-    // load the mask from a file into a string
-    std::stringstream buffer;
-    buffer << mask_file.rdbuf();
-    std::string mask_str;
-    mask_str = buffer.str();
-    int source_code_index;
-
-    printf(source_str.c_str());
-    printf("\n");
-    printf(mask_str.c_str());
-    printf("\n");
-
-    shaped_output = mask_str;
+    debug("[DEBUG]\n%s\n", vars.src);
+    debug("[DEBUG]\n%s\n", vars.mask);
+    debug("[DEBUG]\n%s\n", vars.output);
 
     // main replacing logic
     for(int index = 0; index < mask_str.length(); index++) {
@@ -158,11 +277,13 @@ int main(int argc, char* argv[]) {
                         // index++;
                         break;
                     case 2:
+                        /*
                         shaped_output[index] = '/';
                         shaped_output[index + 1] = '*';
-                        index++;
-                        // finishcomment();
+                        index++;*/
+                        insertcomment(shaped_output, mask_str, source_str, index, source_code_index);
                         break;
+                        /*
                     case 3: 
                         shaped_output[index] = '/';
                         shaped_output[index + 1] = '*';
@@ -170,6 +291,7 @@ int main(int argc, char* argv[]) {
                         index += 2;
                         // finishcomment();
                         break;
+                        */
                     #if 0
                     case 2:
                         shaped_output[index] = '/';
@@ -237,3 +359,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+#pragma endregion
