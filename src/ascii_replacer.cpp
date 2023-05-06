@@ -128,8 +128,9 @@ int main(int argc, char* argv[]) {
                 // try to fit source code token into mask
                 if (mask_word_length >= source_code_word_length) { 
                 // enough space for token
-                    source_code_index++; // copy from src to ouput
+                     // copy from src to ouput
                     shaped_output[index] = source_str[source_code_index]; 
+                    source_code_index++;
                 } else { // not enough space for token handle edge case here
 
                     debug("[DEBUG] mask: %d, src: %d ", mask_word_length, source_code_word_length);
@@ -187,24 +188,6 @@ int main(int argc, char* argv[]) {
                     }
                 } 
             }
-
-
-            // if there is enough space in the mask paste in token
-            if (mask_word_length >= source_code_word_length) {
-                if(source_code_index < source_str.length()) {
-                    source_code_index++;
-                    shaped_output[index] = source_str[source_code_index];
-                } else // if we get to the lenght of the source code we are done  
-                    printf("%s\n", shaped_output.c_str());
-            }
-
-            // we unable to paste a token from the src into the mask
-            // handle all cases here and turn this into a function later
-            if (mask_word_length < source_code_word_length)
-            {
-                
-            }
-            
 
             /* this can be expanded to include other opportunities to split 
             *  the source code tokens
