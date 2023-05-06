@@ -11,7 +11,7 @@ void parse(string mask, string source_code, int position_mask, int position_sour
         //invoke edgecase functoin
 }
 
-bool edgecase(int leftover_mask, string mask, int mask_position, string source_code, int *source_code_position) {
+bool handle_edge_case(int leftover_mask, string& mask, int& mask_position, string& source_code, int& source_code_position) {
 
     switch(leftover_mask) {
         case 1:
