@@ -29,6 +29,15 @@ int count_char(std::ifstream& file, char c) {
     return count;
 }
 
+bool insertcomment(string &output_str, string &mask_str, string &src_str, int &mask_ind, int &src_ind) {
+    //assert();
+    while (mask_ind < mask_str.lenght())
+    {
+    
+    }
+    
+}
+
 int main(int argc, char* argv[]) {
     if (argc != 3) {
         print_usage();
@@ -98,6 +107,9 @@ int main(int argc, char* argv[]) {
 
     printf(source_str.c_str());
     printf("\n");
+    printf(mask_str.c_str());
+    printf("\n");
+
     shaped_output = mask_str;
 
     // main replacing logic
@@ -124,13 +136,15 @@ int main(int argc, char* argv[]) {
                 source_code_index, source_str.length());
 
             // this means we havent reached the end of the source code
-            if(source_code_index < source_str.length()) {
+            if(source_code_index < source_str.length() - 1) {
                 // try to fit source code token into mask
                 if (mask_word_length >= source_code_word_length) { 
                 // enough space for token
-                     // copy from src to ouput
-                    shaped_output[index] = source_str[source_code_index]; 
+                    // copy from src to ouput
                     source_code_index++;
+                    shaped_output[index] = source_str[source_code_index];
+                    
+                    
                 } else { // not enough space for token handle edge case here
 
                     debug("[DEBUG] mask: %d, src: %d ", mask_word_length, source_code_word_length);
@@ -140,8 +154,21 @@ int main(int argc, char* argv[]) {
                     switch (mask_word_length) {
                     
                     case 1:
-                        shaped_output[index] = ' ';
+                        shaped_output[index] = '@';
+                        // index++;
+                        break;
+                    case 2:
+                        shaped_output[index] = '/';
+                        shaped_output[index + 1] = '*';
                         index++;
+                        // finishcomment();
+                        break;
+                    case 3: 
+                        shaped_output[index] = '/';
+                        shaped_output[index + 1] = '*';
+                        shaped_output[index + 2] = '*';
+                        index += 2;
+                        // finishcomment();
                         break;
                     #if 0
                     case 2:
