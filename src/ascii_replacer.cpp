@@ -191,12 +191,24 @@ bool replace(globalvars &vars) {
             vars.output += vars.current_token.data;
             vars.mask_ind += vars.current_token.len;
         } else {
+            vars.outofspace = true;
+            bool edgecase_success = false;
+            edgecase_success = parsingedgecase(vars);
+            if(!edgecase_success) {
+                printf("there was an error dealing in dealing with an edgecase\n");
+                exit(EXIT_FAILURE);
+            }
+
             // token obviously doesnt fit
             // handle edge case
             // take along the entire context
         }
 
+
+        // find way to insert string
+
     } while(ok_to_continue);
+
     return false;
 } 
 
@@ -253,6 +265,7 @@ int main(int argc, char* argv[]) {
     debug("[DEBUG]\n%s\n", vars.mask);
     debug("[DEBUG]\n%s\n", vars.output);
 
+    #if 0
     // main replacing logic
     for(int index = 0; index < mask_str.length(); index++) {
         // if a newline is encountered in the mask copy it over to the output
@@ -375,6 +388,7 @@ int main(int argc, char* argv[]) {
     // when done output the string to the terminal
     printf("\n[RESULT] result: \n%s", shaped_output.c_str());
 
+    #endif
     // cleanup
     mask_file.close();
     source_file.close();
