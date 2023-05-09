@@ -33,6 +33,10 @@ typedef struct globalvars {
     bool outofspace;
 } globalvars;
 
+#pragma region function_prototypes
+    bool parsingedgecase(globalvars &vars);
+#pragma endregion
+
 #pragma region util_functions
 
 void print_usage() {
@@ -177,19 +181,28 @@ bool replace(globalvars &vars) {
     do {
         vars.current_token = pop_token(vars.src);
 
-        vars.newline_distance = vars.mask.find('\n', vars.mask_ind);
-        vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
+        vars.newline_distance = vars.mask.find('\n', vars.mask_ind) - vars.mask_ind;
+        vars.slotend_distance = std::min(
+                vars.mask.find(' ', vars.mask_ind) - vars.mask_ind,
+                vars.mask.find('\n', vars.mask_ind) - vars.mask_ind);
 
-        token_fits = vars.current_token.len <= vars.slotend_distance &&
-                     vars.current_token.len <= vars.newline_distance;
+        token_fits = vars.current_token.len <= vars.slotend_distance;
         
-        vars.outofspace = vars.mask_ind == vars.mask_len;
+        printf("token fits: %d, remaining slot: %d, newline_in: %d, mask_ind: %d\n", 
+                token_fits, vars.slotend_distance, vars.newline_distance, 
+                vars.mask_ind);
+        
+        vars.outofspace = vars.mask_ind >= vars.mask_len;
+        
         ok_to_continue = token_fits && vars.current_token.valid &&
                          !vars.outofspace;
 
         if(token_fits) {
             vars.output += vars.current_token.data;
             vars.mask_ind += vars.current_token.len;
+
+            vars.newline_distance = vars.mask.find('\n', vars.mask_ind);
+            vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
         } else {
             vars.outofspace = true;
             bool edgecase_success = false;
@@ -204,6 +217,11 @@ bool replace(globalvars &vars) {
             // take along the entire context
         }
 
+        if(vars.mask[vars.mask_ind] == '\n') {
+            vars.output += '\n';
+            vars.output_ind++;
+            vars.mask_ind++;
+        }
 
         // find way to insert string
 
@@ -213,6 +231,9 @@ bool replace(globalvars &vars) {
 } 
 
 bool parsingedgecase(globalvars &vars) {
+    debug("[DEBUG]\noutput:\n%s\n", vars.output.c_str());
+    // generate comment token
+    // insert comment token and append whatever whitespace is neccesary
     return false;
 }
 
@@ -241,8 +262,12 @@ int main(int argc, char* argv[]) {
     vars.mask = mask_buffer.str();
 
     std::stringstream src_buffer;
-    src_buffer << src_file.rdbuf();
+    src_buffer << source_file.rdbuf();
     vars.src = src_buffer.str();
+
+    debug("[DEBUG]\n%s\n", vars.src.c_str());
+    debug("[DEBUG]\n%s\n", vars.mask.c_str());
+    debug("[DEBUG]\n%s\n", vars.output.c_str());
 
     // format the source code properly
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\t'), vars.src.end());
@@ -261,9 +286,11 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    debug("[DEBUG]\n%s\n", vars.src);
-    debug("[DEBUG]\n%s\n", vars.mask);
-    debug("[DEBUG]\n%s\n", vars.output);
+    debug("[DEBUG]\n%s\n", vars.src.c_str());
+    debug("[DEBUG]\n%s\n", vars.mask.c_str());
+    debug("[DEBUG]\n%s\n", vars.output.c_str());
+    
+    replace(vars);
 
     #if 0
     // main replacing logic
