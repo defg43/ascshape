@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <regex>
 #include <assert.h>
+#include <stdint.h>
 
 #define DEBUG 1
 
@@ -34,7 +35,8 @@ typedef struct globalvars {
 } globalvars;
 
 #pragma region function_prototypes
-    bool parsingedgecase(globalvars &vars);
+    bool parsingEdgecase(globalvars &vars);
+    token generateCommentToken(uint32_t comment_length, bool end_of_line = false);
 #pragma endregion
 
 #pragma region util_functions
@@ -204,23 +206,28 @@ bool replace(globalvars &vars) {
             vars.newline_distance = vars.mask.find('\n', vars.mask_ind);
             vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
         } else {
-            vars.outofspace = true;
-            bool edgecase_success = false;
-            edgecase_success = parsingedgecase(vars);
-            if(!edgecase_success) {
-                printf("there was an error dealing in dealing with an edgecase\n");
-                exit(EXIT_FAILURE);
-            }
-
             // token obviously doesnt fit
             // handle edge case
             // take along the entire context
-        }
+            vars.outofspace = true;
+            bool edgecase_success = false;
+            edgecase_success = parsingEdgecase(vars);
+            if(!edgecase_success) {
+                printf("there was an error while dealing with an edgecase: \n");
+                printf("\033[1;31m%s\033[0m", vars.output.c_str());
+                printf("%s", vars.mask.substr(vars.mask_ind + 1).c_str());
+                exit(EXIT_FAILURE);
+            }
+            debug("[DEBUG]\n%s", vars.output.c_str());
+            // todo pull forward string
 
-        if(vars.mask[vars.mask_ind] == '\n') {
-            vars.output += '\n';
-            vars.output_ind++;
-            vars.mask_ind++;
+            // resume loop since edgecase got handled
+            vars.newline_distance = vars.mask.find('\n', vars.mask_ind);
+            vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
+            token_fits = vars.current_token.len <= vars.slotend_distance;
+            vars.outofspace = vars.mask_ind >= vars.mask_len;    
+            ok_to_continue = token_fits && vars.current_token.valid &&
+                                                    !vars.outofspace;
         }
 
         // find way to insert string
@@ -230,11 +237,112 @@ bool replace(globalvars &vars) {
     return false;
 } 
 
-bool parsingedgecase(globalvars &vars) {
+bool parsingEdgecase(globalvars &vars) {
     debug("[DEBUG]\noutput:\n%s\n", vars.output.c_str());
+    // establish if we are on the end of a line
+    bool end_of_line = false;
+    assert(vars.newline_distance >= vars.slotend_distance);
+    end_of_line = vars.newline_distance == vars.slotend_distance;
+
     // generate comment token
+    token comment = generateCommentToken(vars.slotend_distance, end_of_line);
+    if(comment.valid) {
+        vars.output += comment.data;
+        vars.mask_ind += comment.len;
+        return true;
     // insert comment token and append whatever whitespace is neccesary
+    }
     return false;
+}
+
+[[nodiscard]] token generateCommentToken(uint32_t comment_length, bool end_of_line) {
+    union switcher_util
+    {
+        struct { uint32_t part1; uint32_t part2; };
+        struct { uint64_t required_token_type; };
+    };
+    switcher_util switcher = {
+        .part1 = comment_length,
+        .part2 = end_of_line 
+    }; 
+
+    printf("\n\ncomment_length is 0x%016X\n", (switcher.part1));
+    printf("end_of_line is 0x%016X\n", (switcher.part2));
+    printf("the switcher(value) is 0x%016lX\n", (switcher.required_token_type));
+    
+    token comment;
+    switch(switcher.required_token_type) {
+        case 0x0000'0001'0000'0000:
+            comment = { 
+                .data = "\n",
+                .len = 1,
+                .valid = true 
+            };
+            break;
+        case 0x0000'0001'0000'0001:
+            comment = { 
+                .data = " \n",
+                .len = 2,
+                .valid = true 
+            };
+            break;
+        case 0x0000'0001'0000'0002:
+            comment = { 
+                .data = "//\n",
+                .len = 3,
+                .valid = true 
+            };
+            break;
+        case 0x0000'0001'0000'0003:
+            comment = { 
+                .data = " //\n",
+                .len = 4,
+                .valid = true 
+            };
+            break;
+        case 0x0000'0001'0000'0004 ... 0x0000'0001'FFFF'FFFF:
+            comment = { 
+                .data = "/*" + std::string(comment_length - 4, '*') + "*/\n",
+                .len = comment_length + 1,
+                .valid = true 
+            };
+            break;
+        case 0x0000000000000000:
+            comment = { 
+                .data = " ",
+                .len = 1,
+                .valid = true 
+            };
+            break;
+        case 0x0000'0000'0000'0001:
+            comment = { 
+                .data = " ",
+                .len = 1,
+                .valid = false // this means the previous token  
+            };                 // shall be pulled forward by one char
+            break;
+        case 0x0000'0000'0000'0002:
+            // this might be more complicated to handle
+            break;
+        case 0x0000'0000'0000'0004 ... 0x0000'0000'FFFF'FFFF:
+            comment = { 
+                .data = "/*" + std::string(comment_length - 4, '*') + "*/",
+                .len = comment_length,
+                .valid = true 
+            };
+            break;
+        default:
+            printf("not impleted yet\n");
+            printf("implement:\ncase 0x%016lX:\n\tbreak;\n", 
+                (switcher.required_token_type));
+            comment = { 
+                .data = "»not implemented yet«",
+                .len = 21,
+                .valid = false 
+            };
+            break;
+    }
+    return comment;
 }
 
 #pragma endregion
@@ -291,131 +399,7 @@ int main(int argc, char* argv[]) {
     debug("[DEBUG]\n%s\n", vars.output.c_str());
     
     replace(vars);
-
-    #if 0
-    // main replacing logic
-    for(int index = 0; index < mask_str.length(); index++) {
-        // if a newline is encountered in the mask copy it over to the output
-        if (mask_str[index] == '\n') {
-                shaped_output[index] = '\n';
-                index++;
-                debug("[DEBUG] whitespace, skipping\n");
-            }
-        
-        // look ahead in mask and find number until next ' '
-        // this is the space that is still avaible in the mask
-        int mask_word_length =
-            std::min(mask_str.find(' ', index), mask_str.find('\n', index)) - index;
-        // get length of the next token from the source code
-        int source_code_word_length = (source_str[source_code_index] == ' ')?
-            source_str.find(' ', source_code_index + 1) - source_code_index:
-            source_str.find(' ', source_code_index) - source_code_index;
-        
-        // if DEBUG is set to 1 this just logs indexes
-        debug("[DEBUG] index: %d, word_lenght: %d, src_word_len: %d, src_index: %d, src_len: %d\n", 
-                index, mask_word_length, source_code_word_length, 
-                source_code_index, source_str.length());
-
-            // this means we havent reached the end of the source code
-            if(source_code_index < source_str.length() - 1) {
-                // try to fit source code token into mask
-                if (mask_word_length >= source_code_word_length) { 
-                // enough space for token
-                    // copy from src to ouput
-                    source_code_index++;
-                    shaped_output[index] = source_str[source_code_index];
-                    
-                    
-                } else { // not enough space for token handle edge case here
-
-                    debug("[DEBUG] mask: %d, src: %d ", mask_word_length, source_code_word_length);
-                    // edgecase function here and check if we are inside of a comment
-                    debug("[DEBUG] we had %d places left\n", mask_word_length);
-                    bool we_have_more_problems = false;
-                    switch (mask_word_length) {
-                    
-                    case 1:
-                        shaped_output[index] = '@';
-                        // index++;
-                        break;
-                    case 2:
-                        /*
-                        shaped_output[index] = '/';
-                        shaped_output[index + 1] = '*';
-                        index++;*/
-                        insertcomment(shaped_output, mask_str, source_str, index, source_code_index);
-                        break;
-                        /*
-                    case 3: 
-                        shaped_output[index] = '/';
-                        shaped_output[index + 1] = '*';
-                        shaped_output[index + 2] = '*';
-                        index += 2;
-                        // finishcomment();
-                        break;
-                        */
-                    #if 0
-                    case 2:
-                        shaped_output[index] = '/';
-                        shaped_output[index + 1] = '*';
-                        index += 2;
-                        we_have_more_problems = false;
-                        printf("\n\nentering loop\n\n");
-                        do {
-                            while(mask_str[index] == ' ' || mask_str[index] == '\n' 
-                                && index < mask_str.length()) {
-                                index += 2;
-                            }
-                            if(index == mask_str.length()) {
-                                std::cerr << "exceded lenght" << '\n';
-                                exit(EXIT_FAILURE);
-                            }
-                            int section_lenght = mask_str.find(index, ' ') - index;
-                            assert(section_lenght > 0);
-
-                            if (source_str[source_code_index] == ' ') source_code_index++;
-                            int next_token_lenght = source_str.find(source_code_index, ' ') -
-                                source_code_index + 2; // +2 because we want to fir "* /"
-
-                            if (section_lenght >= next_token_lenght) {
-                                shaped_output[index] = '*';
-                                shaped_output[index + 1] = '/';
-                                index += 2; 
-                            } else {
-                                // fill section with comments *
-                                while (mask_str[index] == '#')
-                                {
-                                    if (mask_str[index] != '\n') 
-                                        shaped_output[index] = '*';                                
-                                    index++;                             
-                                }  
-                                we_have_more_problems = true;                   
-                            }
-                        } while(we_have_more_problems);
-                        break;
-                    #endif
-                    default:
-                        break;
-                    }
-                } 
-            }
-
-            /* this can be expanded to include other opportunities to split 
-            *  the source code tokens
-            *  space characters are obviously earsed from the source code as
-            *  this would othewise lead to concatenation
-            *  for something like "func()" the split to "func ()" is optional
-            *  if the source code contains "func ()" it can obviously be merged together
-            *  but that is harder to implement
-            */
-        // if not call edge case function with the string and position 
-        // and try to fill in a comment this can also fail as the comment may reduce
-        // availible characters which may result in the string not fitting in       
-    }
-    // when done output the string to the terminal
-    printf("\n[RESULT] result: \n%s", shaped_output.c_str());
-
-    #endif
+    printf("\n[RESULT]:\n%s\n",vars.output.c_str());
     // cleanup
     mask_file.close();
     source_file.close();
