@@ -15,7 +15,7 @@
 #endif
 typedef struct token {
     std::string data;
-    int len;
+    uint32_t len;
     bool valid;
 }token;
 typedef struct globalvars {
@@ -31,12 +31,16 @@ typedef struct globalvars {
     token current_token;
     int newline_distance;
     int slotend_distance;
+    bool defer_token_popping;
     bool outofspace;
 } globalvars;
 
 #pragma region function_prototypes
     bool parsingEdgecase(globalvars &vars);
+    token pop_token(std::string& input, globalvars &vars);
     token generateCommentToken(uint32_t comment_length, bool end_of_line = false);
+    bool currentTokenNeedsSeperator(std::string check_end, std::string check_front);
+    bool contains(const std::string& str, const std::string& substr);
 #pragma endregion
 
 #pragma region util_functions
@@ -45,6 +49,8 @@ void print_usage() {
     printf("Usage: ascii_art [mask_file] [source_file]\n"); 
     // cout is an eyesore and i refuse to use it 
 }
+
+[[nodiscard]]
 int count_char(const std::string& str, char c) {
     int count = 0;
     for (char current_char : str) {
@@ -55,10 +61,36 @@ int count_char(const std::string& str, char c) {
     return count;
 }
 
-token pop_token(std::string& input) {
+[[nodiscard]]
+bool contains(const std::string& str, const std::string& substr) {
+    return str.find(substr) != std::string::npos;
+}
+
+[[nodiscard]] 
+bool currentTokenNeedsSeperator(std::string check_end, std::string check_front) {
+    if(check_end.empty())
+        return false;
+    std::string seperatorless_characters = "+-*/%&|^!~<>?:\"=\'\n#\\{}()[];,";
+    std::string end_pre, front_cur;
+    bool pre_is_string_token, cur_is_string_token;
+
+    end_pre = check_end.back();
+    front_cur = check_front[0];
+    
+    std::cout << end_pre << "«»" << front_cur << '\n';
+    // std::cout << check_end << "«»" << check_front << '\n';
+
+    pre_is_string_token = !contains(seperatorless_characters, end_pre);
+    cur_is_string_token = !contains(seperatorless_characters, front_cur);
+
+    return pre_is_string_token && cur_is_string_token;
+}
+
+token pop_token(std::string& input, globalvars &vars) {
+    bool seperation_needed = false;
     token info;
     info.len = 0;
-    info.valid = false;    
+    info.valid = false;
     // Remove leading spaces
     while (!input.empty() && input[0] == ' ') {
         input.erase(0, 1);
@@ -86,6 +118,22 @@ token pop_token(std::string& input) {
             info.len++;
         }
     }    
+
+    seperation_needed = currentTokenNeedsSeperator(vars.output, info.data);
+    // std::cout << vars.output[vars.output.size()] << "«»" << info.data <<'\n';
+    if(seperation_needed) {
+        if (vars.slotend_distance < info.len + 1) {
+            // determine if token is *really* going to be pasted 
+            // behind another string_token
+            // if not we dont append the space because that will be provided
+            // by the mask
+            /*nothing*/
+        } else {
+            info.data = " " + info.data;
+            info.len++;
+        } 
+    }
+
     // Set valid flag
     info.valid = true;    
     return info;
@@ -99,8 +147,7 @@ int getNextTokenLength(const std::string& str, int index) {
             if (start >= 0 && end < 0) {
                 end = i;
             }
-        }
-        else {
+        } else {
             if (start < 0) {
                 start = i;
             }
@@ -181,7 +228,8 @@ bool replace(globalvars &vars) {
     vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
 
     do {
-        vars.current_token = pop_token(vars.src);
+        if (!vars.defer_token_popping)
+            vars.current_token = pop_token(vars.src, vars);
 
         vars.newline_distance = vars.mask.find('\n', vars.mask_ind) - vars.mask_ind;
         vars.slotend_distance = std::min(
@@ -204,7 +252,10 @@ bool replace(globalvars &vars) {
             vars.mask_ind += vars.current_token.len;
 
             vars.newline_distance = vars.mask.find('\n', vars.mask_ind);
-            vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
+            vars.slotend_distance = std::min(
+                vars.mask.find(' ', vars.mask_ind) - vars.mask_ind,
+                vars.mask.find('\n', vars.mask_ind) - vars.mask_ind);
+            vars.defer_token_popping = false;
         } else {
             // token obviously doesnt fit
             // handle edge case
@@ -212,15 +263,19 @@ bool replace(globalvars &vars) {
             vars.outofspace = true;
             bool edgecase_success = false;
             edgecase_success = parsingEdgecase(vars);
-            if(!edgecase_success) {
+            if(!edgecase_success) { // this swallows the last poped token 
+                                    // and replaces it with a comment
+                                    // prevent token poping
                 printf("there was an error while dealing with an edgecase: \n");
                 printf("\033[1;31m%s\033[0m", vars.output.c_str());
-                printf("%s", vars.mask.substr(vars.mask_ind + 1).c_str());
+                printf("%s", vars.mask.substr(vars.mask_ind).c_str());
                 exit(EXIT_FAILURE);
             }
             debug("[DEBUG]\n%s", vars.output.c_str());
             // todo pull forward string
 
+            // defer next token popping
+            vars.defer_token_popping = true;
             // resume loop since edgecase got handled
             vars.newline_distance = vars.mask.find('\n', vars.mask_ind);
             vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
@@ -255,7 +310,8 @@ bool parsingEdgecase(globalvars &vars) {
     return false;
 }
 
-[[nodiscard]] token generateCommentToken(uint32_t comment_length, bool end_of_line) {
+[[nodiscard]]
+token generateCommentToken(uint32_t comment_length, bool end_of_line) {
     union switcher_util
     {
         struct { uint32_t part1; uint32_t part2; };
@@ -318,11 +374,23 @@ bool parsingEdgecase(globalvars &vars) {
             comment = { 
                 .data = " ",
                 .len = 1,
-                .valid = false // this means the previous token  
+                .valid = true//false // this means the previous token  
             };                 // shall be pulled forward by one char
             break;
         case 0x0000'0000'0000'0002:
             // this might be more complicated to handle
+            comment = { 
+                .data = std::string(comment_length, '#'),
+                .len = comment_length,
+                .valid = true 
+            };
+            break;
+        case 0x0000'0000'0000'0003:
+            comment = { 
+                .data = std::string(comment_length, '#'),
+                .len = comment_length,
+                .valid = true 
+            };
             break;
         case 0x0000'0000'0000'0004 ... 0x0000'0000'FFFF'FFFF:
             comment = { 
@@ -391,7 +459,9 @@ int main(int argc, char* argv[]) {
 
     if (vars.outofspace) {
         printf("not enough space\n");
-        exit(EXIT_FAILURE);
+        printf("src_len: %d\n", vars.src_len);
+        printf("slot amount: %d\n", vars.mask_slot_amount);
+        // exit(EXIT_FAILURE);
     }
 
     debug("[DEBUG]\n%s\n", vars.src.c_str());
@@ -399,7 +469,10 @@ int main(int argc, char* argv[]) {
     debug("[DEBUG]\n%s\n", vars.output.c_str());
     
     replace(vars);
+
     printf("\n[RESULT]:\n%s\n",vars.output.c_str());
+    printf("src_len: %d\n", vars.src_len);
+    printf("mask_slot_amount: %d\n", vars.mask_slot_amount);
     // cleanup
     mask_file.close();
     source_file.close();
