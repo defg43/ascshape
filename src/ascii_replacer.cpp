@@ -51,6 +51,35 @@ void print_usage() {
 }
 
 [[nodiscard]]
+bool isTokenChar(char c) {
+    static const std::string TOKEN_CHARS = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    return TOKEN_CHARS.find(c) != std::string::npos;
+}
+
+[[nodiscard]]
+int isOperatorOrDelimiter(const std::string& str) {
+    static const std::string operators[] = {
+        "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
+        "<<=", ">>=",
+        "++", "--", "<<", ">>",
+        "==", "!=", "&&", "||",
+        "<=", ">=",
+        "->",
+        "[[", "]]", "({", "})",
+        "(", ")", "{", "}", "[", "]",
+        ";", ":", ",", "+", "-", "*",
+        "/", "%", "=", "<", ">", "&", "|",
+        "!", "^", "~", "?", ":"
+    };
+    for (const std::string& op : operators) {
+        if (str.substr(0, op.length()) == op) {
+            return op.length();
+        }
+    }
+    return false;
+}
+
+[[nodiscard]]
 int count_char(const std::string& str, char c) {
     int count = 0;
     for (char current_char : str) {
@@ -137,6 +166,68 @@ token pop_token(std::string& input, globalvars &vars) {
     // Set valid flag
     info.valid = true;    
     return info;
+}
+
+// this needs to be to be adapted to behave like pop_token
+// eg. it shall return a token struct, with prepending of space as needed
+std::string pop_token_prototype_working(std::string& str) {
+    // Skip any leading whitespace
+    std::size_t startPos = str.find_first_not_of(" \t\n\r\f\v");
+
+    // Return an empty string if there's no token left
+    if (startPos == std::string::npos) {
+        return "";
+    }
+
+    // Check if the token is a comment
+    if (str[startPos] == '/' && str[startPos + 1] == '/') {
+        std::size_t endPos = str.find('\n', startPos + 2);
+        if (endPos == std::string::npos) {
+            endPos = str.length();
+        }
+        std::string token = str.substr(startPos, endPos - startPos);
+        str.erase(startPos, endPos - startPos);
+        return token;
+    } else if (str[startPos] == '/' && str[startPos + 1] == '*') {
+        std::size_t endPos = str.find("*/", startPos + 2);
+        if (endPos == std::string::npos) {
+            endPos = str.length();
+        }
+        std::string token = str.substr(startPos, endPos - startPos + 2);
+        str.erase(startPos, endPos - startPos + 2);
+        return token;
+    }
+
+    // Check if the token is a string literal or character literal
+    if (str[startPos] == '"' || str[startPos] == '\'') {
+        char quote = str[startPos];
+        std::size_t endPos = str.find_first_of(quote, startPos + 1);
+        while (str[endPos - 1] == '\\' && str[endPos - 2] != '\\') {
+            endPos = str.find_first_of(quote, endPos + 1);
+        }
+        std::string token = str.substr(startPos, endPos - startPos + 1);
+        str.erase(startPos, endPos - startPos + 1);
+        return token;
+    }
+
+    // Check if the token is a operator or a delimiter
+    int opLength = isOperatorOrDelimiter(str.substr(startPos));
+    if (opLength > 0) {
+        std::string token = str.substr(startPos, opLength);
+        str.erase(startPos, opLength);
+        return token;
+    }
+
+    // Find the end position of the token
+    std::size_t endPos = startPos + 1;
+    while (endPos < str.length() && isTokenChar(str[endPos]) && !isOperatorOrDelimiter(str.substr(startPos, endPos - startPos))) {
+        endPos++;
+    }
+
+    // Extract and return the token
+    std::string token = str.substr(startPos, endPos - startPos);
+    str.erase(startPos, endPos - startPos);
+    return token;
 }
 
 int getNextTokenLength(const std::string& str, int index) {
