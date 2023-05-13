@@ -42,6 +42,8 @@ typedef struct globalvars {
     bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front);
     bool contains(const std::string &str, const std::string &substr);
     token token_post_processing(globalvars &vars, token current_token);
+    int isOperatorOrDelimiter(const std::string &str);
+    bool isTokenChar(char c);
 #pragma endregion
 
 #pragma region util_functions 
@@ -50,17 +52,27 @@ void print_usage() {
     printf("Usage: ascii_art [mask_file] [source_file]\n"); 
 }
 
+#if 1
 [[nodiscard]]
 bool isTokenChar(char c) {
     static const std::string TOKEN_CHARS = 
-            "._abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            "_.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     return TOKEN_CHARS.find(c) != std::string::npos;
 }
+#else
+[[nodiscard]]
+bool isTokenChar(char c) {
+    const std::string compare = std::string(1, c);
+    return !isOperatorOrDelimiter(compare);
+}
+#endif
+
+
 
 [[nodiscard]]
 int isOperatorOrDelimiter(const std::string &str) {
     static const std::string operators[] = {
-        "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
+        "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "::"
         "<<=", ">>=",
         "++", "--", "<<", ">>",
         "==", "!=", "&&", "||",
@@ -70,7 +82,7 @@ int isOperatorOrDelimiter(const std::string &str) {
         "(", ")", "{", "}", "[", "]",
         ";", ":", ",", "+", "-", "*",
         "/", "%", "=", "<", ">", "&", "|",
-        "!", "^", "~", "?", ":"
+        "!", "^", "~", "?"
     };
     for (const std::string &op : operators) {
         if (str.substr(0, op.length()) == op) {
@@ -179,7 +191,7 @@ token token_post_processing(globalvars &vars, token current_token) {
     // if not we dont append the space because that will be provided
     // by the mask
 
-    // std::cout << vars.output[vars.output.size()] << "«»" << info.data <<'\n';
+    //std::cout << vars.output[vars.output.size()] << "«»" << current_token.data <<'\n';
     if(seperation_needed) {
         if (vars.slotend_distance < current_token.len + 1) {
 
@@ -194,10 +206,8 @@ token token_post_processing(globalvars &vars, token current_token) {
     return current_token;
 }
 
-// this needs to be to be adapted to behave like pop_token
-// eg. it shall return a token struct, with prepending of space as needed
-[[nodiscard]]
-token pop_token(std::string &str, globalvars &vars) {
+
+token pop_token_unstable(std::string &str, globalvars &vars) {
     // Skip any leading whitespace
     bool seperation_needed = false;
     token current_token = {
@@ -240,11 +250,135 @@ token pop_token(std::string &str, globalvars &vars) {
         while (str[endPos - 1] == '\\' && str[endPos - 2] != '\\') {
             endPos = str.find_first_of(quote, endPos + 1);
         }
+        std::cout << "end: " << endPos << '\n';
+        std::cout << "start: " << startPos << '\n';
         current_token.data = str.substr(startPos, endPos - startPos + 1);
+        std::cout << "tok: " << current_token.data << '\n';
+        exit(EXIT_SUCCESS);
         current_token.len = current_token.data.length();
         str.erase(startPos, endPos - startPos + 1);
         return token_post_processing(vars, current_token);
     }
+
+
+
+    // Check if the token is a operator or a delimiter
+    int opLength = isOperatorOrDelimiter(str.substr(startPos));
+    if (opLength > 0) {
+        current_token.data = str.substr(startPos, opLength);
+        current_token.len = current_token.data.length();
+        str.erase(startPos, opLength);
+        return token_post_processing(vars, current_token);
+    }
+
+    // Find the end position of the token
+    std::size_t endPos = startPos + 1;
+    while (endPos < str.length() && isTokenChar(str[endPos]) && 
+            !isOperatorOrDelimiter(str.substr(startPos, endPos - startPos))) {
+        endPos++;
+    }
+
+    // Extract and return the token
+    current_token.data = str.substr(startPos, endPos - startPos);
+    current_token.len = current_token.data.length();
+    str.erase(startPos, endPos - startPos);
+    return token_post_processing(vars, current_token);
+}
+
+
+
+// this needs to be to be adapted to behave like pop_token
+// eg. it shall return a token struct, with prepending of space as needed
+[[nodiscard]]
+token pop_token(std::string &str, globalvars &vars) {
+    // Skip any leading whitespace
+    bool seperation_needed = false;
+    token current_token = {
+        .len = 0,
+        .valid = false
+    };
+
+    // erase any whitespace at the front of the string
+    std::size_t startPos = 0;
+    while (str[startPos] == ' ' || str[startPos] == '\n' || str[startPos] == '\t')
+    {
+        str.erase(0, 1);
+    }    
+
+    // Return an empty string if there's no token left
+    if (startPos == std::string::npos) {
+        return current_token;
+    }
+
+    // Check if the token is a comment
+    if (str[startPos] == '/' && str[startPos + 1] == '/') {
+        std::size_t endPos = str.find('\n', startPos + 2);
+        if (endPos == std::string::npos) {
+            endPos = str.length();
+        }
+        current_token.data = str.substr(startPos, endPos - startPos); 
+        current_token.len = current_token.data.length();
+        str.erase(startPos, endPos - startPos);
+        return token_post_processing(vars, current_token);
+
+    } else if (str[startPos] == '/' && str[startPos + 1] == '*') {
+        std::size_t endPos = str.find("*/", startPos + 2);
+        if (endPos == std::string::npos) {
+            endPos = str.length();
+        }
+        current_token.data = str.substr(startPos, endPos - startPos + 2);
+        current_token.len = current_token.data.length();
+        str.erase(startPos, endPos - startPos + 2);
+        return token_post_processing(vars, current_token);
+    }
+
+    if (str[startPos] == '"' || str[startPos] == '\'') {
+        char quote = str[startPos];
+        std::size_t endPos = str.find_first_of(quote, startPos + 1);
+        while (str[endPos - 1] == '\\' && str[endPos - 2] != '\\') {
+            endPos = str.find_first_of(quote, endPos + 1);
+        }
+        if (endPos > vars.slotend_distance && vars.slotend_distance >= 3)
+        {
+            int escape_sequence_overhang = 0;
+            for (int i = 0; i < vars.slotend_distance - 1; i++)
+            {
+                escape_sequence_overhang +=
+                    str[i] == '\a' || str[i] == '\b' ||
+                    str[i] == 0x1B || str[i] == '\f' ||
+                    str[i] == '\n' || str[i] == '\r' ||
+                    str[i] == '\t' || str[i] == '\v' ||
+                    str[i] == '\\' || str[i] == '\'';
+            }     
+            endPos = vars.slotend_distance - 2 - escape_sequence_overhang;
+            current_token.data = str.substr(startPos, endPos - startPos + 1) + "\"";
+            current_token.len = current_token.data.length();
+            str.erase(startPos, endPos - startPos + 1);
+            str.insert(0, "\"");
+                std::cout << "the start position is: " << startPos << '\n';
+                std::cout << "the end position is: " << endPos << '\n';
+                std::cout << current_token.data << '\n';
+                std::cout << "slotend: " << vars.slotend_distance << '\n';
+                std::cout << str << '\n';
+                #if 0
+                static int exit_counter = 0;
+                if (exit_counter >= 1)
+                {
+                    exit(EXIT_SUCCESS); // halting at second string for debugging
+                } else 
+                exit_counter++;
+                #endif
+            return token_post_processing(vars, current_token);
+        }
+        
+        current_token.data = str.substr(startPos, endPos - startPos + 1);
+        current_token.len = current_token.data.length();
+        str.erase(startPos, endPos - startPos + 1);
+            std::cout << "the start position is: " << startPos << '\n';
+            std::cout << "the end position is: " << endPos << '\n';
+            // exit(EXIT_SUCCESS); 
+        return token_post_processing(vars, current_token);
+    }  
 
     // Check if the token is a operator or a delimiter
     int opLength = isOperatorOrDelimiter(str.substr(startPos));
@@ -397,6 +531,7 @@ bool replace(globalvars &vars) {
             // take along the entire context
             vars.outofspace = true;
             bool edgecase_success = false;
+            
             edgecase_success = parsingEdgecase(vars);
             if(!edgecase_success) { // this swallows the last poped token 
                                     // and replaces it with a comment
