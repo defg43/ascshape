@@ -6,10 +6,10 @@
 #include <assert.h>
 #include <stdint.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
 #if DEBUG == 1
-#define debug(...) printf(__VA_ARGS__)
+#define debug(...) fprintf(stderr,"[DEBUG] " __VA_ARGS__)
 #else
 #define debug(...) 
 #endif
@@ -67,8 +67,6 @@ bool isTokenChar(char c) {
 }
 #endif
 
-
-
 [[nodiscard]]
 int isOperatorOrDelimiter(const std::string &str) {
     static const std::string operators[] = {
@@ -118,8 +116,7 @@ bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front
     end_pre = check_end.back();
     front_cur = check_front[0];
     
-    std::cout << end_pre << "«»" << front_cur << '\n';
-    // std::cout << check_end << "«»" << check_front << '\n';
+    debug("comparison: %c«»%c\n", end_pre[0], front_cur[0]);
 
     pre_is_string_token = !contains(seperatorless_characters, end_pre);
     cur_is_string_token = !contains(seperatorless_characters, front_cur);
@@ -185,16 +182,8 @@ token pop_token_old(std::string &input, globalvars &vars) {
 token token_post_processing(globalvars &vars, token current_token) {
     bool seperation_needed;
     seperation_needed = currentTokenNeedsSeperator(vars.output, current_token.data);
-    
-    // determine if token is *really* going to be pasted 
-    // behind another string_token
-    // if not we dont append the space because that will be provided
-    // by the mask
-
-    //std::cout << vars.output[vars.output.size()] << "«»" << current_token.data <<'\n';
     if(seperation_needed) {
         if (vars.slotend_distance < current_token.len + 1) {
-
             /*nothing*/
         } else {
             current_token.data = " " + current_token.data;
@@ -285,10 +274,6 @@ token pop_token_unstable(std::string &str, globalvars &vars) {
     return token_post_processing(vars, current_token);
 }
 
-
-
-// this needs to be to be adapted to behave like pop_token
-// eg. it shall return a token struct, with prepending of space as needed
 [[nodiscard]]
 token pop_token(std::string &str, globalvars &vars) {
     // Skip any leading whitespace
@@ -345,11 +330,9 @@ token pop_token(std::string &str, globalvars &vars) {
             current_token.len = current_token.data.length();
             str.erase(startPos, endPos - startPos + 1);
             str.insert(0, "\"");
-                std::cout << "the start position is: " << startPos << '\n';
-                std::cout << "the end position is: " << endPos << '\n';
-                std::cout << current_token.data << '\n';
-                std::cout << "slotend: " << vars.slotend_distance << '\n';
-                std::cout << str << '\n';
+                debug("start-end, slotend position: %d-%d, %d\n", startPos, endPos,
+                    vars.slotend_distance); 
+                debug("current literal: %s\n", current_token.data.c_str());
             return token_post_processing(vars, current_token);
         } else if (endPos > vars.slotend_distance && vars.slotend_distance == 0) {
             assert(vars.slotend_distance != 0);
@@ -360,8 +343,8 @@ token pop_token(std::string &str, globalvars &vars) {
         current_token.data = str.substr(startPos, endPos - startPos + 1);
         current_token.len = current_token.data.length();
         str.erase(startPos, endPos - startPos + 1);
-            std::cout << "the start position is: " << startPos << '\n';
-            std::cout << "the end position is: " << endPos << '\n';
+            debug("start-end, slotend position: %d-%d, %d\n", startPos, endPos,
+                    vars.slotend_distance);
             // exit(EXIT_SUCCESS); 
         return token_post_processing(vars, current_token);
     }  
@@ -516,7 +499,7 @@ bool replace(globalvars &vars) {
         token_fits = vars.current_token.len <= vars.slotend_distance && 
             vars.slotend_distance != 0;
         
-        printf("token fits: %d, remaining slot: %d, newline_in: %d, mask_ind: %d\n", 
+        debug("token fits: %d, remaining slot: %d, newline_in: %d, mask_ind: %d\n", 
                 token_fits, vars.slotend_distance, vars.newline_distance, 
                 vars.mask_ind);
         
@@ -550,7 +533,7 @@ bool replace(globalvars &vars) {
                 printf("%s", vars.mask.substr(vars.mask_ind).c_str());
                 exit(EXIT_FAILURE);
             }
-            debug("[DEBUG]\n%s", vars.output.c_str());
+            
             // todo pull forward string
 
             // defer next token popping
@@ -569,7 +552,9 @@ bool replace(globalvars &vars) {
 } 
 
 bool parsingEdgecase(globalvars &vars) {
-    debug("[DEBUG]\noutput:\n%s\n", vars.output.c_str());
+    // for debugging
+    // debug("\noutput:\n%s\n", vars.output.c_str());
+    
     // establish if we are on the end of a line
     bool end_of_line = false;
     assert(vars.newline_distance >= vars.slotend_distance);
@@ -598,9 +583,9 @@ token generateCommentToken(uint32_t comment_length, bool end_of_line) {
         .part2 = end_of_line 
     }; 
 
-    printf("\n\ncomment_length is 0x%016X\n", (switcher.part1));
-    printf("end_of_line is 0x%016X\n", (switcher.part2));
-    printf("the switcher(value) is 0x%016lX\n", (switcher.required_token_type));
+    debug("\ncomment_length is 0x%016X\n", (switcher.part1));
+    debug("end_of_line is 0x%016X\n", (switcher.part2));
+    debug("the switcher(value) is 0x%016lX\n", (switcher.required_token_type));
     
     token comment;
     switch(switcher.required_token_type) {
