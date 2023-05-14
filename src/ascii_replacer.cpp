@@ -127,7 +127,7 @@ bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front
     return pre_is_string_token && cur_is_string_token;
 }
 
-[[nodiscard]]
+[[deprecated]] [[nodiscard]]
 token pop_token_old(std::string &input, globalvars &vars) {
     bool seperation_needed = false;
     token info;
@@ -206,7 +206,7 @@ token token_post_processing(globalvars &vars, token current_token) {
     return current_token;
 }
 
-
+[[deprecated]]
 token pop_token_unstable(std::string &str, globalvars &vars) {
     // Skip any leading whitespace
     bool seperation_needed = false;
@@ -389,6 +389,7 @@ token pop_token(std::string &str, globalvars &vars) {
     return token_post_processing(vars, current_token);
 }
 
+[[deprecated]]
 int getNextTokenLength(const std::string &str, int index) {
     int start = -1, end = -1;
     int len = str.length();
@@ -412,6 +413,7 @@ int getNextTokenLength(const std::string &str, int index) {
     return -1; // No more tokens found
 }
 
+[[deprecated]]
 int nextTokenStart(const std::string &str, int startIndex) {
     // Skip any spaces before the next token
     while (startIndex < str.length() && std::isspace(str[startIndex])) {
@@ -428,6 +430,7 @@ int nextTokenStart(const std::string &str, int startIndex) {
     return startIndex == str.length() ? -1 : startIndex;
 }
 
+[[deprecated]]
 bool insertcomment(std::string &output_str, std::string &mask_str, 
                     std::string &src_str, 
                     int &mask_ind, int &src_ind) {
