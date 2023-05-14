@@ -340,17 +340,7 @@ token pop_token(std::string &str, globalvars &vars) {
         }
         if (endPos > vars.slotend_distance && vars.slotend_distance >= 3)
         {
-            int escape_sequence_overhang = 0;
-            for (int i = 0; i < vars.slotend_distance - 1; i++)
-            {
-                escape_sequence_overhang +=
-                    str[i] == '\a' || str[i] == '\b' ||
-                    str[i] == 0x1B || str[i] == '\f' ||
-                    str[i] == '\n' || str[i] == '\r' ||
-                    str[i] == '\t' || str[i] == '\v' ||
-                    str[i] == '\\' || str[i] == '\'';
-            }     
-            endPos = vars.slotend_distance - 2 - escape_sequence_overhang;
+            endPos = vars.slotend_distance - 2;
             current_token.data = str.substr(startPos, endPos - startPos + 1) + "\"";
             current_token.len = current_token.data.length();
             str.erase(startPos, endPos - startPos + 1);
@@ -360,14 +350,10 @@ token pop_token(std::string &str, globalvars &vars) {
                 std::cout << current_token.data << '\n';
                 std::cout << "slotend: " << vars.slotend_distance << '\n';
                 std::cout << str << '\n';
-                #if 0
-                static int exit_counter = 0;
-                if (exit_counter >= 1)
-                {
-                    exit(EXIT_SUCCESS); // halting at second string for debugging
-                } else 
-                exit_counter++;
-                #endif
+            return token_post_processing(vars, current_token);
+        } else if (endPos > vars.slotend_distance && vars.slotend_distance == 0) {
+            assert(vars.slotend_distance != 0);
+            current_token.len = current_token.data.length();
             return token_post_processing(vars, current_token);
         }
         
@@ -497,15 +483,35 @@ bool replace(globalvars &vars) {
     vars.slotend_distance = vars.mask.find(' ', vars.mask_ind);
 
     do {
-        if (!vars.defer_token_popping)
+        if (vars.slotend_distance == 0)
+        {
+            if (vars.slotend_distance == vars.newline_distance || 
+                    vars.mask[vars.mask_ind] == '\n') {
+                vars.output += "\n";
+                vars.mask_ind++;
+            } else {
+                vars.output += " ";
+                vars.mask_ind++;
+            }
+            vars.newline_distance = vars.mask.find('\n', vars.mask_ind) - vars.mask_ind;
+            vars.slotend_distance = std::min(
+                vars.mask.find(' ', vars.mask_ind) - vars.mask_ind,
+                vars.mask.find('\n', vars.mask_ind) - vars.mask_ind);
+            continue;
+        }
+        
+        if (!vars.defer_token_popping) {
+            assert(vars.slotend_distance != 0);
             vars.current_token = pop_token(vars.src, vars);
+        }            
 
         vars.newline_distance = vars.mask.find('\n', vars.mask_ind) - vars.mask_ind;
         vars.slotend_distance = std::min(
                 vars.mask.find(' ', vars.mask_ind) - vars.mask_ind,
                 vars.mask.find('\n', vars.mask_ind) - vars.mask_ind);
 
-        token_fits = vars.current_token.len <= vars.slotend_distance;
+        token_fits = vars.current_token.len <= vars.slotend_distance && 
+            vars.slotend_distance != 0;
         
         printf("token fits: %d, remaining slot: %d, newline_in: %d, mask_ind: %d\n", 
                 token_fits, vars.slotend_distance, vars.newline_distance, 
@@ -554,9 +560,6 @@ bool replace(globalvars &vars) {
             ok_to_continue = token_fits && vars.current_token.valid &&
                                                     !vars.outofspace;
         }
-
-        // find way to insert string
-
     } while(ok_to_continue);
 
     return false;
