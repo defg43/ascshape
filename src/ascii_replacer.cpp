@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <stdint.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
 #if DEBUG == 1
 #define debug(...) fprintf(stderr,"[DEBUG] " __VA_ARGS__)
@@ -68,7 +68,6 @@ bool isTokenChar(char c) {
     return !isOperatorOrDelimiter(compare);
 }
 #endif
-
 
 void purgeComments(std::string& input) {
     std::regex 
@@ -221,6 +220,10 @@ token pop_token_old(std::string &input, globalvars &vars) {
 [[nodiscard]]
 token token_post_processing(globalvars &vars, token current_token) {
     bool seperation_needed;
+    if (vars.output.empty() != true) {
+        current_token.valid = true;
+        return current_token;
+    }
     seperation_needed = currentTokenNeedsSeperator(vars.output, 
         current_token.data);
     if(seperation_needed) {
@@ -233,6 +236,7 @@ token token_post_processing(globalvars &vars, token current_token) {
     }
     // Set valid flag
     current_token.valid = true;
+    assert(current_token.len != 0);
     return current_token;
 }
 
@@ -315,7 +319,6 @@ token pop_token_unstable(std::string &str, globalvars &vars) {
 
 [[nodiscard]]
 token pop_token(std::string &str, globalvars &vars) {
-    // Skip any leading whitespace
     bool seperation_needed = false;
     token current_token = {
         .len = 0,
@@ -324,14 +327,14 @@ token pop_token(std::string &str, globalvars &vars) {
 
     // erase any whitespace at the front of the string
     std::size_t startPos = 0;
-    while (str[startPos] == ' ' || str[startPos] == '\n' || str[startPos] == '\t')
-    {
+    while (str[startPos] == ' ' || str[startPos] == '\n' || 
+        str[startPos] == '\t') {
         str.erase(0, 1);
     }    
 
     // Return an empty string if there's no token left
     if (startPos == std::string::npos) {
-        return current_token;
+        return current_token; // hm
     }
 
     // Check if the token is a comment
@@ -528,6 +531,14 @@ bool replace(globalvars &vars) {
         if (!vars.defer_token_popping) {
             assert(vars.slotend_distance != 0);
             vars.current_token = pop_token(vars.src, vars);
+            if (vars.current_token.len == 0) {
+                debug("corrupt token with length 0 detected: %s\n", 
+                    vars.current_token.data.c_str());
+                debug("the index of the mask is: %d\n", 
+                    vars.mask_ind);
+                debug("rest of the src string is:\n %s\n", vars.src.c_str());
+                exit(EXIT_FAILURE);
+            }
             assert(vars.current_token.len != 0);
             assert(vars.current_token.data.length() == 
                 vars.current_token.len);
@@ -626,7 +637,7 @@ token generateCommentToken(uint32_t comment_length, bool end_of_line) {
         .part2 = end_of_line 
     }; 
 
-    debug("\ncomment_length is 0x%016X\n", (switcher.part1));
+    debug("comment_length is 0x%016X\n", (switcher.part1));
     debug("end_of_line is 0x%016X\n", (switcher.part2));
     debug("the switcher(value) is 0x%016lX\n", (switcher.required_token_type));
     
@@ -736,7 +747,7 @@ int main(int argc, char* argv[]) {
     }
 
     globalvars vars = {};
-
+    
     std::stringstream mask_buffer;
     mask_buffer << mask_file.rdbuf();
     vars.mask = mask_buffer.str();
@@ -745,17 +756,17 @@ int main(int argc, char* argv[]) {
     src_buffer << source_file.rdbuf();
     vars.src = src_buffer.str();
 
-    debug("[DEBUG]\n%s\n", vars.src.c_str());
-    debug("[DEBUG]\n%s\n", vars.mask.c_str());
-    debug("[DEBUG]\n%s\n", vars.output.c_str());
+    printf("\n%s\n", vars.src.c_str());
+    debug("\n%s\n", vars.mask.c_str());
+    debug("\n%s\n", vars.output.c_str());
 
     // format the source code properly
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\t'), vars.src.end());
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\n'), vars.src.end());
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\r'), vars.src.end());
     vars.src = regex_replace(vars.src, std::regex("\\s{2,}"), " ");
-    purgeComments(vars.src);
-    purgeRegionDirectives(vars.src);
+    // purgeComments(vars.src); // this seems to cut source code at some point
+    // purgeRegionDirectives(vars.src);
 
     // init vars
     vars.mask_slot_amount = count_char(vars.mask, '#');
@@ -770,12 +781,13 @@ int main(int argc, char* argv[]) {
         // exit(EXIT_FAILURE);
     }
 
-    debug("[DEBUG]\n%s\n", vars.src.c_str());
-    debug("[DEBUG]\n%s\n", vars.mask.c_str());
-    debug("[DEBUG]\n%s\n", vars.output.c_str());
+    printf("\n%s\n", vars.src.c_str());
+    debug("\n%s\n", vars.mask.c_str());
+    debug("\n%s\n", vars.output.c_str());
     
     replace(vars);
 
+    printf("\n[SRC]%s\n", vars.src.c_str());
     printf("\n[RESULT]:\n%s\n",vars.output.c_str());
     printf("src_len: %d\n", vars.src_len);
     printf("mask_slot_amount: %d\n", vars.mask_slot_amount);
