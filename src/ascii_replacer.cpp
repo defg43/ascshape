@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <stdint.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
 #if DEBUG == 1
 #define debug(...) fprintf(stderr,"[DEBUG] " __VA_ARGS__)
@@ -37,6 +37,8 @@ typedef struct globalvars {
 
 #pragma region function_prototypes
     bool parsingEdgecase(globalvars &vars);
+    void purgeRegionDirectives(std::string& input);
+    void purgeComments(std::string& input);
     token pop_token(std::string &input, globalvars &vars);
     token generateCommentToken(uint32_t comment_length, bool end_of_line = false);
     bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front);
@@ -66,6 +68,44 @@ bool isTokenChar(char c) {
     return !isOperatorOrDelimiter(compare);
 }
 #endif
+
+
+void purgeComments(std::string& input) {
+    std::regex 
+        commentRegex(R"((?:\/\*(?:[^*]|(?:\*+[^*\/]))*\*+\/)|(?:\/\/.*$))");
+    input = std::regex_replace(input, commentRegex, "");
+}
+
+void purgeRegionDirectives(std::string& input) {
+    std::istringstream iss(input);
+    std::ostringstream oss;
+    std::string line;
+
+    // lines starting with these string shall be removed
+    const std::string strings_to_remove[] = {
+        "#pragma region",
+        "#pragma endregion",
+        "#region",
+        "#endregion"
+    };
+
+    const int numStringsToRemove = sizeof(strings_to_remove) / 
+        sizeof(strings_to_remove[0]);
+
+    while (std::getline(iss, line)) {
+        bool removeLine = false;
+        for (int i = 0; i < numStringsToRemove; ++i) {
+            if (line.find(strings_to_remove[i]) == 0) {
+                removeLine = true;
+                break;
+            }
+        }
+        if (!removeLine) {
+            oss << line << "\n";
+        }
+    }
+    input = oss.str();
+}
 
 [[nodiscard]]
 int isOperatorOrDelimiter(const std::string &str) {
@@ -181,7 +221,8 @@ token pop_token_old(std::string &input, globalvars &vars) {
 [[nodiscard]]
 token token_post_processing(globalvars &vars, token current_token) {
     bool seperation_needed;
-    seperation_needed = currentTokenNeedsSeperator(vars.output, current_token.data);
+    seperation_needed = currentTokenNeedsSeperator(vars.output, 
+        current_token.data);
     if(seperation_needed) {
         if (vars.slotend_distance < current_token.len + 1) {
             /*nothing*/
@@ -248,8 +289,6 @@ token pop_token_unstable(std::string &str, globalvars &vars) {
         str.erase(startPos, endPos - startPos + 1);
         return token_post_processing(vars, current_token);
     }
-
-
 
     // Check if the token is a operator or a delimiter
     int opLength = isOperatorOrDelimiter(str.substr(startPos));
@@ -489,6 +528,10 @@ bool replace(globalvars &vars) {
         if (!vars.defer_token_popping) {
             assert(vars.slotend_distance != 0);
             vars.current_token = pop_token(vars.src, vars);
+            assert(vars.current_token.len != 0);
+            assert(vars.current_token.data.length() == 
+                vars.current_token.len);
+
         }            
 
         vars.newline_distance = vars.mask.find('\n', vars.mask_ind) - vars.mask_ind;
@@ -711,6 +754,8 @@ int main(int argc, char* argv[]) {
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\n'), vars.src.end());
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\r'), vars.src.end());
     vars.src = regex_replace(vars.src, std::regex("\\s{2,}"), " ");
+    purgeComments(vars.src);
+    purgeRegionDirectives(vars.src);
 
     // init vars
     vars.mask_slot_amount = count_char(vars.mask, '#');
