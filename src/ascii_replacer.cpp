@@ -38,6 +38,7 @@ typedef struct globalvars {
 #pragma region function_prototypes
     bool parsingEdgecase(globalvars &vars);
     void purgeRegionDirectives(std::string& input);
+    void removeComments(std::string& sourceCode);
     void purgeComments(std::string& input);
     token pop_token(std::string &input, globalvars &vars);
     token generateCommentToken(uint32_t comment_length, bool end_of_line = false);
@@ -69,6 +70,43 @@ bool isTokenChar(char c) {
 }
 #endif
 
+void removeComments(std::string& sourceCode) {
+    std::vector<std::string> lines;
+
+    // Split the source code into lines
+    size_t start = 0;
+    size_t end = sourceCode.find("\n");
+    while (end != std::string::npos) {
+        lines.push_back(sourceCode.substr(start, end - start));
+        start = end + 1;
+        end = sourceCode.find("\n", start);
+    }
+    lines.push_back(sourceCode.substr(start));
+
+    // Process each line to remove comments
+    bool insideComment = false;
+    sourceCode.clear();
+    for (const std::string& line : lines) {
+        std::string processedLine;
+        for (size_t i = 0; i < line.length(); ++i) {
+            if (!insideComment && line[i] == '/' && i + 1 < line.length() && line[i + 1] == '/')
+                break;
+            else if (!insideComment && line[i] == '/' && i + 1 < line.length() && line[i + 1] == '*') {
+                insideComment = true;
+                ++i;
+            } else if (insideComment && line[i] == '*' && i + 1 < line.length() && line[i + 1] == '/') {
+                insideComment = false;
+                ++i;
+            } else if (!insideComment) {
+                processedLine += line[i];
+            }
+        }
+
+        sourceCode += processedLine + "\n";
+    }
+}
+
+[[deprecated]]
 void purgeComments(std::string& input) {
     std::regex 
         commentRegex(R"((?:\/\*(?:[^*]|(?:\*+[^*\/]))*\*+\/)|(?:\/\/.*$))");
@@ -761,12 +799,19 @@ int main(int argc, char* argv[]) {
     debug("\n%s\n", vars.output.c_str());
 
     // format the source code properly
+    // purgeComments(vars.src); // this seems to cut source code at some point
+    // purgeRegionDirectives(vars.src); // this appears to be messing with 
+            // string literal splitting
+
+    removeComments(vars.src);
+    printf("\n[SRC]:\n%s", vars.src.c_str());
+    // newline characters are removede, everything after a // is 
+        // considered a comment
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\t'), vars.src.end());
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\n'), vars.src.end());
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\r'), vars.src.end());
     vars.src = regex_replace(vars.src, std::regex("\\s{2,}"), " ");
-    // purgeComments(vars.src); // this seems to cut source code at some point
-    // purgeRegionDirectives(vars.src);
+    
 
     // init vars
     vars.mask_slot_amount = count_char(vars.mask, '#');
@@ -784,11 +829,16 @@ int main(int argc, char* argv[]) {
     printf("\n%s\n", vars.src.c_str());
     debug("\n%s\n", vars.mask.c_str());
     debug("\n%s\n", vars.output.c_str());
-    
+    if (vars.src.empty()) {
+        std::cout << "the src string was already empty before it got processed\n";
+    }
+
+
     replace(vars);
 
-    printf("\n[SRC]%s\n", vars.src.c_str());
+    printf("\n[SRC]:\n%s\n", vars.src.c_str());
     printf("\n[RESULT]:\n%s\n",vars.output.c_str());
+    printf(!vars.src.length() ? "src is empty\n" : "src is not empty\n");
     printf("src_len: %d\n", vars.src_len);
     printf("mask_slot_amount: %d\n", vars.mask_slot_amount);
     // cleanup
