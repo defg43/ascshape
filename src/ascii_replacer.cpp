@@ -6,7 +6,10 @@
 #include <assert.h>
 #include <stdint.h>
 
-#define DEBUG 0
+
+// std::string test = R"(abc this is a test string)";
+
+#define DEBUG 1
 
 #if DEBUG == 1
 #define debug(...) fprintf(stderr,"[DEBUG] " __VA_ARGS__)
@@ -41,6 +44,7 @@ typedef struct globalvars {
     void removeComments(std::string& sourceCode);
     void purgeComments(std::string& input);
     token pop_token(std::string &input, globalvars &vars);
+    void transformRawStrings(std::string& sourceCode);
     token generateCommentToken(uint32_t comment_length, bool end_of_line = false);
     bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front);
     bool contains(const std::string &str, const std::string &substr);
@@ -104,13 +108,6 @@ void removeComments(std::string& sourceCode) {
 
         sourceCode += processedLine + "\n";
     }
-}
-
-[[deprecated]]
-void purgeComments(std::string& input) {
-    std::regex 
-        commentRegex(R"((?:\/\*(?:[^*]|(?:\*+[^*\/]))*\*+\/)|(?:\/\/.*$))");
-    input = std::regex_replace(input, commentRegex, "");
 }
 
 void purgeRegionDirectives(std::string& input) {
@@ -183,7 +180,40 @@ bool contains(const std::string &str, const std::string &substr) {
     return str.find(substr) != std::string::npos;
 }
 
+void transformRawStrings(std::string& sourceCode) {
+    std::string rawStringStart = "R\"(";
+    std::string rawStringEnd = ")\"";
+
+    std::pair<std::string, std::string> conversionPairs[] = {
+        {"\\", "\\\\"}, {"\t", "\\t"},
+        {"\n", "\\n"}, {"\r", "\\r"},
+        {"\e", "\\e"}, {"\a", "\\a"},
+        {"\b", "\\b"}, {"\"", "\\\""},
+        {"\'", "\\\'"},
+    };
+
+    std::size_t searchStart = sourceCode.find(rawStringStart);
+    while (searchStart != std::string::npos) {
+        std::size_t searchEnd = sourceCode.find(rawStringEnd, searchStart);
+        if (searchEnd != std::string::npos) {
+            std::string rawString = sourceCode.substr(searchStart + rawStringStart.length(), searchEnd - searchStart - rawStringStart.length());
+            for (const auto& pair : conversionPairs) {
+                std::size_t escapePos = rawString.find(pair.first);
+                while (escapePos != std::string::npos) {
+                    rawString.replace(escapePos, pair.first.length(), pair.second);
+                    escapePos = rawString.find(pair.first, escapePos + pair.second.length());
+                }
+            }
+            sourceCode.replace(searchStart, searchEnd - searchStart + rawStringEnd.length(), "\"" + rawString + "\"");
+        } else {
+            break;  // Found an opening delimiter but no closing delimiter, stop searching
+        }
+        searchStart = sourceCode.find(rawStringStart, searchStart + rawStringStart.length());
+    }
+}
+
 bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front) {
+    debug("calling function currentTokenNeedsSeperator\n");
     if(check_end.empty())
         return false;
     std::string seperatorless_characters = "+-*/%&|^!~<>?:\"=\'\n#\\{}()[];,";
@@ -194,6 +224,9 @@ bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front
     front_cur = check_front[0];
     
     debug("comparison: %c«»%c\n", end_pre[0], front_cur[0]);
+    debug("separation was needed: %s\n", 
+        (pre_is_string_token && cur_is_string_token)?
+        "true" : "false");
 
     pre_is_string_token = !contains(seperatorless_characters, end_pre);
     cur_is_string_token = !contains(seperatorless_characters, front_cur);
@@ -201,67 +234,18 @@ bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front
     return pre_is_string_token && cur_is_string_token;
 }
 
-[[deprecated]] [[nodiscard]]
-token pop_token_old(std::string &input, globalvars &vars) {
-    bool seperation_needed = false;
-    token info;
-    info.len = 0;
-    info.valid = false;
-    // Remove leading spaces
-    while (!input.empty() && input[0] == ' ') {
-        input.erase(0, 1);
-    }    
-    // Check if input is empty
-    if (input.empty()) {
-        return info;
-    }    
-    // Extract token
-    size_t token_end = input.find(' ');
-    if (token_end == std::string::npos) {
-        info.data = input;
-        input.clear();
-    } else {
-        info.data = input.substr(0, token_end);
-        input.erase(0, token_end);
-    }
-    // Remove trailing spaces
-    while (!info.data.empty() && info.data.back() == ' ') {
-        info.data.pop_back();
-    }
-    // Count characters in token
-    for (char c : info.data) {
-        if (c != ' ') {
-            info.len++;
-        }
-    }    
-
-    seperation_needed = currentTokenNeedsSeperator(vars.output, info.data);
-    // std::cout << vars.output[vars.output.size()] << "«»" << info.data <<'\n';
-    if(seperation_needed) {
-        if (vars.slotend_distance < info.len + 1) {
-            // determine if token is *really* going to be pasted 
-            // behind another string_token
-            // if not we dont append the space because that will be provided
-            // by the mask
-            /*nothing*/
-        } else {
-            info.data = " " + info.data;
-            info.len++;
-        } 
-    }
-
-    // Set valid flag
-    info.valid = true;    
-    return info;
-}
 
 [[nodiscard]]
 token token_post_processing(globalvars &vars, token current_token) {
+    debug("call from token_post_processing\n");
+    //exit(EXIT_SUCCESS);
     bool seperation_needed;
-    if (vars.output.empty() != true) {
-        current_token.valid = true;
+    if (vars.output.empty()) { // what was the purpose of this again?
+        debug("post processing is returning token as is\n");
+        current_token.valid = true; // this seems very wrong
         return current_token;
     }
+
     seperation_needed = currentTokenNeedsSeperator(vars.output, 
         current_token.data);
     if(seperation_needed) {
@@ -278,85 +262,9 @@ token token_post_processing(globalvars &vars, token current_token) {
     return current_token;
 }
 
-[[deprecated]]
-token pop_token_unstable(std::string &str, globalvars &vars) {
-    // Skip any leading whitespace
-    bool seperation_needed = false;
-    token current_token = {
-        .len = 0,
-        .valid = false
-    };
-
-    std::size_t startPos = str.find_first_not_of(" \t\n\r\f\v");
-
-    // Return an empty string if there's no token left
-    if (startPos == std::string::npos) {
-        return current_token;
-    }
-
-    // Check if the token is a comment
-    if (str[startPos] == '/' && str[startPos + 1] == '/') {
-        std::size_t endPos = str.find('\n', startPos + 2);
-        if (endPos == std::string::npos) {
-            endPos = str.length();
-        }
-        current_token.data = str.substr(startPos, endPos - startPos); 
-        current_token.len = current_token.data.length();
-        str.erase(startPos, endPos - startPos);
-        return token_post_processing(vars, current_token);
-
-    } else if (str[startPos] == '/' && str[startPos + 1] == '*') {
-        std::size_t endPos = str.find("*/", startPos + 2);
-        if (endPos == std::string::npos) {
-            endPos = str.length();
-        }
-        current_token.data = str.substr(startPos, endPos - startPos + 2);
-        current_token.len = current_token.data.length();
-        str.erase(startPos, endPos - startPos + 2);
-        return token_post_processing(vars, current_token);
-    }
-
-    if (str[startPos] == '"' || str[startPos] == '\'') {
-        char quote = str[startPos];
-        std::size_t endPos = str.find_first_of(quote, startPos + 1);
-        while (str[endPos - 1] == '\\' && str[endPos - 2] != '\\') {
-            endPos = str.find_first_of(quote, endPos + 1);
-        }
-        std::cout << "end: " << endPos << '\n';
-        std::cout << "start: " << startPos << '\n';
-        current_token.data = str.substr(startPos, endPos - startPos + 1);
-        std::cout << "tok: " << current_token.data << '\n';
-        exit(EXIT_SUCCESS);
-        current_token.len = current_token.data.length();
-        str.erase(startPos, endPos - startPos + 1);
-        return token_post_processing(vars, current_token);
-    }
-
-    // Check if the token is a operator or a delimiter
-    int opLength = isOperatorOrDelimiter(str.substr(startPos));
-    if (opLength > 0) {
-        current_token.data = str.substr(startPos, opLength);
-        current_token.len = current_token.data.length();
-        str.erase(startPos, opLength);
-        return token_post_processing(vars, current_token);
-    }
-
-    // Find the end position of the token
-    std::size_t endPos = startPos + 1;
-    while (endPos < str.length() && isTokenChar(str[endPos]) && 
-            !isOperatorOrDelimiter(str.substr(startPos, endPos - startPos))) {
-        endPos++;
-    }
-
-    // Extract and return the token
-    current_token.data = str.substr(startPos, endPos - startPos);
-    current_token.len = current_token.data.length();
-    str.erase(startPos, endPos - startPos);
-    return token_post_processing(vars, current_token);
-}
-
 [[nodiscard]]
 token pop_token(std::string &str, globalvars &vars) {
+
     bool seperation_needed = false;
     token current_token = {
         .len = 0,
@@ -403,29 +311,32 @@ token pop_token(std::string &str, globalvars &vars) {
         while (str[endPos - 1] == '\\' && str[endPos - 2] != '\\') {
             endPos = str.find_first_of(quote, endPos + 1);
         }
-        if (endPos > vars.slotend_distance && vars.slotend_distance >= 3)
-        {
+        // slot must at least be 3 because at least 1 charcter should be popped
+        if (endPos > vars.slotend_distance && vars.slotend_distance >= 3) {
             endPos = vars.slotend_distance - 2;
-            current_token.data = str.substr(startPos, endPos - startPos + 1) + "\"";
+            current_token.data = 
+                str.substr(startPos, endPos - startPos + 1) + "\"";
             current_token.len = current_token.data.length();
             str.erase(startPos, endPos - startPos + 1);
             str.insert(0, "\"");
-                debug("start-end, slotend position: %d-%d, %d\n", startPos, endPos,
-                    vars.slotend_distance); 
+                debug("start-end, slotend position: %d-%d, %d\n", 
+                startPos, endPos, vars.slotend_distance); 
                 debug("current literal: %s\n", current_token.data.c_str());
             return token_post_processing(vars, current_token);
+        // in case there is 0 length left in the slot left
         } else if (endPos > vars.slotend_distance && vars.slotend_distance == 0) {
             assert(vars.slotend_distance != 0);
             current_token.len = current_token.data.length();
             return token_post_processing(vars, current_token);
         }
-        
-        current_token.data = str.substr(startPos, endPos - startPos + 1);
+
+        current_token.data = 
+                str.substr(startPos, endPos - startPos + 1); 
+
         current_token.len = current_token.data.length();
         str.erase(startPos, endPos - startPos + 1);
             debug("start-end, slotend position: %d-%d, %d\n", startPos, endPos,
                     vars.slotend_distance);
-            // exit(EXIT_SUCCESS); 
         return token_post_processing(vars, current_token);
     }  
 
@@ -451,90 +362,6 @@ token pop_token(std::string &str, globalvars &vars) {
     str.erase(startPos, endPos - startPos);
     return token_post_processing(vars, current_token);
 }
-
-[[deprecated]]
-int getNextTokenLength(const std::string &str, int index) {
-    int start = -1, end = -1;
-    int len = str.length();
-    for (int i = index; i < len; i++) {
-        if (str[i] == ' ') {
-            if (start >= 0 && end < 0) {
-                end = i;
-            }
-        } else {
-            if (start < 0) {
-                start = i;
-            }
-        }
-        if (i == len - 1 && start >= 0 && end < 0) {
-            end = len;
-        }
-        if (start >= 0 && end >= 0) {
-            return end - start;
-        }
-    }
-    return -1; // No more tokens found
-}
-
-[[deprecated]]
-int nextTokenStart(const std::string &str, int startIndex) {
-    // Skip any spaces before the next token
-    while (startIndex < str.length() && std::isspace(str[startIndex])) {
-        ++startIndex;
-    }
-    // Find the start of the next token
-    while (startIndex < str.length() && !std::isspace(str[startIndex])) {
-        ++startIndex;
-    }
-    // Skip any spaces after the current token
-    while (startIndex < str.length() && std::isspace(str[startIndex])) {
-        ++startIndex;
-    }
-    return startIndex == str.length() ? -1 : startIndex;
-}
-
-[[deprecated]]
-bool insertcomment(std::string &output_str, std::string &mask_str, 
-                    std::string &src_str, 
-                    int &mask_ind, int &src_ind) {
-    assert(src_str.length() - 1 > src_ind);
-    // start comment, we can assume there is ineeded enough space
-    // insert comment start
-    output_str[mask_ind] = '/';
-    mask_ind++;
-    output_str[mask_ind] = '*';
-    mask_ind++;
-    while (mask_ind < mask_str.length()) {
-        if(mask_str[mask_ind] == ' ') // || mask_str[mask_ind] == '\n') // just skip
-            mask_ind++;
-        else { // we have reached a section where code can be placed, 
-        // check if we can stop comment here
-            bool can_finish_comment = getNextTokenLength(mask_str, mask_ind - 1) >= 
-            getNextTokenLength(src_str, src_ind - 1) + 2;
-            if(can_finish_comment) {
-                output_str[mask_ind] = '*';
-                output_str[mask_ind + 1] = '/';
-                mask_ind++;
-                exit(EXIT_SUCCESS);
-                return true; 
-            } else { // we are trapped on an "island" and need to fill it with *
-                while (mask_ind < mask_str.length() && src_ind < src_str.length() && 
-                mask_str[mask_ind] != '\0' && mask_str[mask_ind] != ' ') 
-                // && mask_str[mask_ind] != '\n')
-                {
-                    mask_str[mask_ind] = '*';
-                    mask_ind++;
-                }
-                if(mask_ind >= mask_str.length() || src_ind >= src_str.length()) {
-                    exit(EXIT_FAILURE);
-                    return false;
-                }
-            }
-        }
-    }
-    return false;
-}
-
 #pragma endregion
 
 #pragma region replacer
@@ -591,10 +418,11 @@ bool replace(globalvars &vars) {
         token_fits = vars.current_token.len <= vars.slotend_distance && 
             vars.slotend_distance != 0;
         
-        debug("token fits: %d, remaining slot: %d, newline_in: %d, mask_ind: %d\n", 
-                token_fits, vars.slotend_distance, vars.newline_distance, 
-                vars.mask_ind);
-        
+        debug("token fits: %d, token length: %d, remaining slot: %d, newline_in: %d, mask_ind: %d\n", 
+                token_fits, vars.current_token.len, vars.slotend_distance, 
+                    vars.newline_distance, vars.mask_ind);
+        debug("the token is: %s", vars.current_token.data.c_str());
+
         vars.outofspace = vars.mask_ind >= vars.mask_len;
         
         ok_to_continue = token_fits && vars.current_token.valid &&
@@ -799,19 +627,18 @@ int main(int argc, char* argv[]) {
     debug("\n%s\n", vars.output.c_str());
 
     // format the source code properly
-    // purgeComments(vars.src); // this seems to cut source code at some point
-    // purgeRegionDirectives(vars.src); // this appears to be messing with 
+    purgeRegionDirectives(vars.src); // this appears to be messing with 
             // string literal splitting
 
     removeComments(vars.src);
-    printf("\n[SRC]:\n%s", vars.src.c_str());
+    // printf("\n[SRC]:\n%s", vars.src.c_str());
+    transformRawStrings(vars.src);
     // newline characters are removede, everything after a // is 
         // considered a comment
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\t'), vars.src.end());
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\n'), vars.src.end());
     vars.src.erase(remove(vars.src.begin(), vars.src.end(), '\r'), vars.src.end());
     vars.src = regex_replace(vars.src, std::regex("\\s{2,}"), " ");
-    
 
     // init vars
     vars.mask_slot_amount = count_char(vars.mask, '#');
@@ -832,8 +659,6 @@ int main(int argc, char* argv[]) {
     if (vars.src.empty()) {
         std::cout << "the src string was already empty before it got processed\n";
     }
-
-
     replace(vars);
 
     printf("\n[SRC]:\n%s\n", vars.src.c_str());
