@@ -1,0 +1,3 @@
+[submodule "witc"]
+	path = witc
+	url = git@github.com:defg43/witc.git
