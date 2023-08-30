@@ -5,7 +5,9 @@
 #include <regex>
 #include <assert.h>
 #include <stdint.h>
+#include <utility>
 
+#include "../witc/matching.h"
 
 // std::string test = R"(abc this is a test string)";
 
@@ -18,7 +20,7 @@
 #endif
 typedef struct token {
     std::string data;
-    uint32_t len;
+    int len;
     bool valid;
 }token;
 typedef struct globalvars {
@@ -45,7 +47,7 @@ typedef struct globalvars {
     void purgeComments(std::string& input);
     token pop_token(std::string &input, globalvars &vars);
     void transformRawStrings(std::string& sourceCode);
-    token generateCommentToken(uint32_t comment_length, bool end_of_line = false);
+    token generateCommentToken(int comment_length, bool end_of_line = false);
     bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front);
     bool contains(const std::string &str, const std::string &substr);
     token token_post_processing(globalvars &vars, token current_token);
@@ -492,106 +494,74 @@ bool parsingEdgecase(globalvars &vars) {
 }
 
 [[nodiscard]]
-token generateCommentToken(uint32_t comment_length, bool end_of_line) {
-    union switcher_util
-    {
-        struct { uint32_t part1; uint32_t part2; };
-        struct { uint64_t required_token_type; };
-    };
-    switcher_util switcher = {
-        .part1 = comment_length,
-        .part2 = end_of_line 
-    }; 
-
-    debug("comment_length is 0x%016X\n", (switcher.part1));
-    debug("end_of_line is 0x%016X\n", (switcher.part2));
-    debug("the switcher(value) is 0x%016lX\n", (switcher.required_token_type));
+token generateCommentToken(int comment_length, bool end_of_line) {
     
     token comment;
-    switch(switcher.required_token_type) {
-        case 0x0000'0001'0000'0000:
-            comment = { 
-                .data = "\n",
-                .len = 1,
-                .valid = true 
-            };
-            break;
-        case 0x0000'0001'0000'0001:
-            comment = { 
-                .data = " \n",
-                .len = 2,
-                .valid = true 
-            };
-            break;
-        case 0x0000'0001'0000'0002:
-            comment = { 
-                .data = "//\n",
-                .len = 3,
-                .valid = true 
-            };
-            break;
-        case 0x0000'0001'0000'0003:
-            comment = { 
-                .data = " //\n",
-                .len = 4,
-                .valid = true 
-            };
-            break;
-        case 0x0000'0001'0000'0004 ... 0x0000'0001'FFFF'FFFF:
-            comment = { 
-                .data = "/*" + std::string(comment_length - 4, '*') + "*/\n",
-                .len = comment_length + 1,
-                .valid = true 
-            };
-            break;
-        case 0x0000000000000000:
-            comment = { 
-                .data = " ",
-                .len = 1,
-                .valid = true 
-            };
-            break;
-        case 0x0000'0000'0000'0001:
-            comment = { 
-                .data = " ",
-                .len = 1,
-                .valid = true//false // this means the previous token  
-            };                 // shall be pulled forward by one char
-            break;
-        case 0x0000'0000'0000'0002:
-            // this might be more complicated to handle
-            comment = { 
-                .data = std::string(comment_length, '#'),
-                .len = comment_length,
-                .valid = true 
-            };
-            break;
-        case 0x0000'0000'0000'0003:
-            comment = { 
-                .data = std::string(comment_length, '#'),
-                .len = comment_length,
-                .valid = true 
-            };
-            break;
-        case 0x0000'0000'0000'0004 ... 0x0000'0000'FFFF'FFFF:
-            comment = { 
-                .data = "/*" + std::string(comment_length - 4, '*') + "*/",
-                .len = comment_length,
-                .valid = true 
-            };
-            break;
-        default:
-            printf("not impleted yet\n");
-            printf("implement:\ncase 0x%016lX:\n\tbreak;\n", 
-                (switcher.required_token_type));
-            comment = { 
+    match(comment_length, end_of_line) {
+        pattern(1, false) return { 
+            .data = "\n",
+            .len = 1,
+            .valid = true 
+        };
+        pattern(1, true) return { 
+            .data = " \n",
+            .len = 2,
+            .valid = true 
+        };
+        pattern(2, true) return { 
+            .data = "//\n",
+            .len = 3,
+            .valid = true 
+        };
+        pattern(3, true) return { 
+            .data = " //\n",
+            .len = 4,
+            .valid = true 
+        };
+        pattern(_, true when comment_length > 3) return { 
+            .data = "/*" + std::string(comment_length - 4, '*') + "*/\n",
+            .len = comment_length + 1,
+            .valid = true 
+        };
+        pattern(0, false) return { 
+            .data = " ",
+            .len = 1,
+            .valid = true 
+        };
+        pattern(1, false) return { 
+            .data = " ",
+            .len = 1,
+            .valid = true // false // this means the previous token  
+        };                // should be pulled forward by one char
+        pattern(2, false) return { 
+            .data = std::string(comment_length, '#'),
+            .len = comment_length,
+            .valid = true // this might be more complicated to handle
+        };
+        pattern(3, false) return { 
+            .data = std::string(comment_length, '#'),
+            .len = comment_length,
+            .valid = true 
+        };
+        pattern(_, false when comment_length > 3) return { 
+            .data = "/*" + std::string(comment_length - 4, '*') + "*/",
+            .len = comment_length,
+            .valid = true 
+        };
+        else {
+            printf("unimplemented case caugth\n");
+            printf("implement: \n pattern(%d, %s)", 
+                comment_length, end_of_line ? "true" : "false");
+            return {
                 .data = "»not implemented yet«",
                 .len = 21,
                 .valid = false 
             };
-            break;
-    }
-    return comment;
+        }
+    } 
+    printf("this part of part of the code should not be reachable\n");
+    *(int *)0;
+    return { 0 };
 }
 
 #pragma endregion
