@@ -225,14 +225,14 @@ bool currentTokenNeedsSeperator(std::string &check_end, std::string &check_front
     end_pre = check_end.back();
     front_cur = check_front[0];
     
+    pre_is_string_token = !contains(seperatorless_characters, end_pre);
+    cur_is_string_token = !contains(seperatorless_characters, front_cur);
+    
     debug("comparison: %c«»%c\n", end_pre[0], front_cur[0]);
     debug("separation was needed: %s\n", 
         (pre_is_string_token && cur_is_string_token)?
         "true" : "false");
-
-    pre_is_string_token = !contains(seperatorless_characters, end_pre);
-    cur_is_string_token = !contains(seperatorless_characters, front_cur);
-
+   
     return pre_is_string_token && cur_is_string_token;
 }
 
@@ -495,8 +495,6 @@ bool parsingEdgecase(globalvars &vars) {
 
 [[nodiscard]]
 token generateCommentToken(int comment_length, bool end_of_line) {
-    
-    token comment;
     match(comment_length, end_of_line) {
         pattern(1, false) return { 
             .data = "\n",
