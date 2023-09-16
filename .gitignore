@@ -1,4 +1,4 @@
 build/
 bin/
-shapes/
 .vscode/
+*.code-workspace
